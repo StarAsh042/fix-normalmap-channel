@@ -401,13 +401,24 @@ test('extractChannelRows:rgb 模式下 A 通道退化为灰度', () => {
 test('extractChannelRows:非法 channel 抛错而非静默出错', () => {
   const src = new Uint8ClampedArray(4);
   const dst = new Uint8ClampedArray(4);
-  for (const bad of ['X', '', null, undefined, 2, 'rgb']) {
+  // 注意 undefined 不在此列：undefined 表示「未提供」，合法回落到 R 通道。
+  // 但显式的 null 是上游取值失误，必须报错，否则 bug 会被藏进最终画面。
+  for (const bad of ['X', '', null, 2, 'rgb', 'r']) {
     assert.throws(
       () => Algo.extractChannelRows(src, dst, 1, 0, 1, { channel: bad }),
       /channel/i,
       `channel=${String(bad)} 应抛出可读错误`,
     );
   }
+});
+
+test('extractChannelRows:channel 为 undefined 时回落到 R 通道', () => {
+  const src = new Uint8ClampedArray([10, 20, 30, 40]);
+  const dst = new Uint8ClampedArray(4);
+
+  Algo.extractChannelRows(src, dst, 1, 0, 1, { channel: undefined });
+
+  assert.deepEqual([...dst], [10, 10, 10, 255], '未提供 channel 时应取 R');
 });
 
 test('extractChannelRows:非法 mode 抛错', () => {
@@ -435,7 +446,7 @@ test('extractChannelRows:仅处理指定行区间，区间外保持不变', () =
   Algo.extractChannelRows(src, dst, width, 1, 3, { channel: 'B', mode: 'gray' });
 
   assert.deepEqual(pixelAt(dst, width, 0, 0), [9, 9, 9, 9], '区间外的第 0 行不应被写入');
-  assert.deepEqual(pixelAt(dst, width, 0, 1), [32, 32, 32, 255], '第 1 行 B=30+1=31');
+  assert.deepEqual(pixelAt(dst, width, 0, 1), [31, 31, 31, 255], '第 1 行 B=30+1=31');
   assert.deepEqual(pixelAt(dst, width, 0, 2), [32, 32, 32, 255], '第 2 行 B=30+2=32');
   assert.deepEqual(pixelAt(dst, width, 0, 3), [9, 9, 9, 9], '区间外的末行不应被写入');
 });
