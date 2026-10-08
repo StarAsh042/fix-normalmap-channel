@@ -1,16 +1,9 @@
 /**
  * script-runtime.test.js — 在 Node 中真实执行 script.js 的行为测试。
  *
- * 为什么需要这个文件
- * ------------------
- * script.js 有 1300+ 行，入口是 `document.addEventListener('DOMContentLoaded', init)`。
- * 没有 DOM 就永远执行不到 init()，此前只能「读源码做字符串匹配」——
- * 验证的是代码长得像，不是代码能跑。PR #3 里
- * 「先 clearRect 再 getImageData 导致通道全黑」这个 bug
- * 就是在所有旧测试全绿的情况下靠人工 review 才发现的。
- *
- * 本文件用 test/dom-shim.mjs 提供最小 DOM，让 script.js 真正跑起来，
- * 覆盖它此前完全未被执行过的路径。
+ * script.js 的入口是 document.addEventListener('DOMContentLoaded', init)，
+ * 缺少 DOM 时只能读源码做字符串匹配，验证不了运行行为。
+ * 本文件配合 test/dom-shim.cjs 让它真正跑起来。
  *
  * 零依赖，运行：npm test
  */
@@ -26,8 +19,7 @@ const { loadScript, flushFrames, importImage, runFix } = require('./dom-shim.cjs
 /**
  * 装载 script.js 并返回便捷访问器。
  *
- * 默认导��一张 16×16 纯色图，这样画布处于 is-visible 状态、
- * 浮层可点击——这正是真实用户导入图片后的状态。
+ * 默认导入一张 16×16 纯色图，使画布处于 is-visible 状态、浮层可点击。
  */
 async function mount({ width = 16, height = 16, fill = [10, 20, 30, 255] } = {}) {
     const { document: doc, cleanup } = await loadScript();
@@ -94,7 +86,6 @@ test('装载:DOMContentLoaded 后 init() 真实执行并完成元素绑定', asy
     const app = await mount();
 
     // init() 会给这些元素注册监听，说明它确实跑过了。
-    // 此前 script.js 从未被执行，这些断言无从谈起。
     assert.ok(app.el('fileInput').__listenerCount('change') > 0,
         'fileInput 应已注册 change 监听，证明 init() 真实执行');
     assert.ok(app.el('fixBtn').__listenerCount('click') > 0,
@@ -137,11 +128,11 @@ test('装载:通道徽标反映导入图是否含透明通道', async () => {
 });
 
 /* ======================================================================
-   主修复流程（此前完全未被执行）
+   主修复流程
    ====================================================================== */
 
 test('修复:主线程降级路径产出符合映射规则的结果', async () => {
-    // 不提供 Worker，因此走主线程分片分支——这正是此前无测试覆盖的路径
+    // 不提供 Worker，强制走主线程分片分支
     const app = await mount({ width: 8, height: 8, fill: [10, 20, 30, 40] });
 
     await runFix(app.doc);
@@ -231,7 +222,7 @@ test('浮层:关闭时把画布尺寸归零，释放大图内存', async () => {
 });
 
 /* ======================================================================
-   通道预览：PR #3 的核心，此前一行都没被执行过
+   通道预览
    ====================================================================== */
 
 test('通道:合成视图不回读像素，走 drawImage 零成本路径', async () => {

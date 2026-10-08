@@ -11,22 +11,19 @@ permissions:
 
 jobs:
   test:
-    # job 名即状态检查名：dev / main 的分支保护要求「语法检查与单元测试」通过。
-    # 改名会让所有 PR 卡在 BLOCKED——没有任何检查能提供那个 context。
-    # 若要改名，须先去网页解除分支保护，改完再启用。
+    # job 名与分支保护中登记的状态检查名一致，改名会导致 PR 卡在 BLOCKED
     name: 语法检查与单元测试
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
 
-      # Node 须与 package.json 的 engines 一致（>=22）：
-      # 测试脚本用的 `node --test "test/**/*.test.js"` 其 glob 参数自 Node 21 起才支持。
+      # 与 package.json 的 engines.node 保持一致
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
-      # 本项目零运行时依赖、无 package-lock.json，因此不需 npm ci。
+      # 零运行时依赖，无 lockfile，无需 npm ci
 
       - run: npm test
 

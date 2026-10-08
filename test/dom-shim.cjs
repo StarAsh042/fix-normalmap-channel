@@ -1,23 +1,14 @@
 /**
- * dom-shim.mjs — 在 Node 中为 script.js 提供最小 DOM 垫片。
+ * dom-shim.cjs — 在 Node 中为 script.js 提供最小 DOM 垫片。
  *
- * 为什么需要它
- * ------------
- * script.js 有 1300+ 行，包在 `DOMContentLoaded` 回调里，入口就是：
- *     document.addEventListener('DOMContentLoaded', init);
- * 没有 DOM 就永远不会执行 init()，导致覆盖率工具完全统计不到它。
- * 此前测试对它只能「读源码做字符串匹配」——那验证的是代码长得像，
- * 不是代码能跑。PR #3 中「先 clearRect 再 getImageData 导致通道全黑」
- * 这个 bug 正是所有测试全绿的情况下靠人工 review 才发现的。
+ * script.js 的入口是 document.addEventListener('DOMContentLoaded', init)，
+ * 没有 DOM 就执行不到 init()，测试只能读源码做字符串匹配——
+ * 验证的是代码长得像，不是代码能跑。
  *
- * 为什么不引入 jsdom
- * ------------------
- * jsdom 会带来 node_modules 与 lockfile，破坏本项目「零依赖、无构建步骤」
- * 这一核心卖点。而 script.js 实际用到的 DOM API 只有约 25 个方法，
- * 手写垫片的成本远低于引入依赖，且失败时行为完全可控。
+ * 不用 jsdom 是因为它会带来 node_modules 与 lockfile，破坏本项目
+ * 「零依赖、无构建步骤」的定位。script.js 实际用到的 DOM API 约 25 个。
  *
- * 垫片范围（严格按 script.js 的真实调用面，不多给）
- * --------------------------------------------
+ * 覆盖的 API
  *   document : getElementById / addEventListener / createElement / activeElement / body
  *   Element  : classList / dataset / textContent / style / addEventListener /
  *              setAttribute / removeAttribute / querySelector(All) / closest /
@@ -26,11 +17,10 @@
  *   Canvas   : width / height / getContext / toBlob
  *   2D 上下文 : clearRect / drawImage / getImageData / putImageData / createImageData
  *
- * 已知不支持（script.js 未使用，或已在测试中绕开）
- * --------------------------------------------
- *   - Worker：测试环境不提供，script.js 会走主线程降级分支
- *   - createImageBitmap / Image 解码：测试直接注入 ImageData 形态的假源
- *   - URL.createObjectURL：桩为返回固定字符串
+ * 有意不支持
+ *   - 通配符与后代选择器：script.js 未使用，支持只会让垫片难以推理
+ *   - Worker：不提供，使 script.js 走主线程降级分支（该路径需要被覆盖）
+ *   - Image 解码：由测试通过 createImageBitmap 的替身直接注入假源
  */
 
 /* ======================================================================
@@ -354,11 +344,10 @@ class ShimElement {
     }
 
     /**
-     * 从本元素向上冒泡触发 click，模拟真实浏览器中「点按钮」的行为。
+     * 从本元素向上冒泡触发 click。
      *
-     * 事件监听往往挂在容器上（如 script.js 把 click 挂在 #channelSwitch
-     * 上，靠 event.target.closest 找到具体按钮）。若直接在按钮上 __emit，
-     * 容器上的监听器不会触发，测试就会误判为「点击无效」。
+     * script.js 把 click 挂在 #channelSwitch 上，靠 event.target.closest
+     * 找到具体按钮，因此必须在按钮上触发而不能让监听器直接收到。
      *
      * @param {ShimElement} target 实际被点中的元素
      */
@@ -745,15 +734,11 @@ async function loadScript({ width = 0, height = 0 } = {}) {
     const algo = require('../algorithm.js').NormalMapChannel;
 
     /**
-     * 只注入 script.js 真实用到的全局，其余一律保留 Node 原生对象。
+     * 只注入 script.js 真实用到的全局，其余保留 Node 原生对象。
      *
-     * 特别注意不要覆盖 global.URL：后续 require() 会触发宿主环境的 fs 垫片
-     * （如 WorkBuddy 的 node-brokered-fs-shim），它内部依赖原生 URL，
-     * 一旦替换成普通对象，报错会变成难以定位的
-     * "Right-hand side of 'instanceof' is not callable"。
-     *
-     * URL.createObjectURL / revokeObjectURL 通过 defineProperty 追加到原生对象上，
-     * 不替换对象本身，因此原生语义与垫片语义共存。
+     * 不要覆盖 global.URL：宿主环境的 fs 垫片依赖原生 URL，
+     * 替换后报错会伪装成 "Right-hand side of 'instanceof' is not callable"。
+     * 因此 ObjectURL 相关方法用 defineProperty 追加，不替换对象本身。
      */
     const saved = new Map();
     function define(name, value) {
@@ -853,10 +838,8 @@ async function flushFrames(times = 60) {
 /**
  * 走真实导入流程装载一张测试图。
  *
- * 刻意不手动给 canvas 加 is-visible 之类的类——那是在造假状态，
- * 测的就不是生产代码的行为了。这里通过 fileInput 的 change 事件驱动
- * script.js 自己的 loadFile → applySource → showCanvas 全链路，
- * 让 is-visible 由生产代码自己设置。
+ * 不手动给 canvas 加 is-visible，而是驱动 script.js 自己的
+ * loadFile → applySource → showCanvas 链路，让状态由生产代码设置。
  *
  * @param {object} doc loadScript 返回的 document
  * @param {number} width
